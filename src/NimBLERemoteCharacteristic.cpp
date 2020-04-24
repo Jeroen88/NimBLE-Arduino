@@ -336,7 +336,7 @@ std::string NimBLERemoteCharacteristic::readValue() {
 
     do {
         m_semaphoreReadCharEvt.take("readValue");
-        if(rc == BLE_HS_ATT_ERR(BLE_ATT_ERR_ATTR_NOT_LONG)) {
+    /*    if(rc == BLE_HS_ATT_ERR(BLE_ATT_ERR_ATTR_NOT_LONG)) {
             NIMBLE_LOGE(LOG_TAG, "Attribute not long");
             m_value = "";
             rc = ble_gattc_read(pClient->getConnId(), m_handle,
@@ -345,8 +345,8 @@ std::string NimBLERemoteCharacteristic::readValue() {
             NIMBLE_LOGE(LOG_TAG, "reading long offset=%d", m_value.length());
             rc = ble_gattc_read_long(pClient->getConnId(), m_handle, m_value.length(),
                             NimBLERemoteCharacteristic::onReadCB, this);
-        }
- /*       
+        }*/
+
         if(rc == BLE_HS_EAGAIN) {
             NIMBLE_LOGE(LOG_TAG, "reading long offset=%d", m_value.length());
             rc = ble_gattc_read_long(pClient->getConnId(), m_handle, m_value.length(),
@@ -355,7 +355,7 @@ std::string NimBLERemoteCharacteristic::readValue() {
             rc = ble_gattc_read(pClient->getConnId(), m_handle,
                             NimBLERemoteCharacteristic::onReadCB, this);
         }
- */ 
+
 //  long read experiment
 /*        rc = ble_gattc_read_long(pClient->getConnId(), m_handle, 0,
                         NimBLERemoteCharacteristic::onReadCB, this);
@@ -378,9 +378,13 @@ std::string NimBLERemoteCharacteristic::readValue() {
                 rc = 0;
                 break;
             case BLE_HS_ATT_ERR(BLE_ATT_ERR_ATTR_NOT_LONG):
-                retryCount++;
+                NIMBLE_LOGE(LOG_TAG, "Attribute not long");
+				rc=0;
                 break;
-                
+			// signal for long read attempt if data length == mtu -1
+			case BLE_HS_EAGAIN:
+				retryCount++;
+                break;
             case BLE_HS_ATT_ERR(BLE_ATT_ERR_INSUFFICIENT_AUTHEN):
             case BLE_HS_ATT_ERR(BLE_ATT_ERR_INSUFFICIENT_AUTHOR):
             case BLE_HS_ATT_ERR(BLE_ATT_ERR_INSUFFICIENT_ENC):
@@ -423,7 +427,11 @@ int NimBLERemoteCharacteristic::onReadCB(uint16_t conn_handle,
         }
         if(attr->om->om_len >= (ble_att_mtu(characteristic->getRemoteService()->getClient()->getConnId()) - 1)){
             NIMBLE_LOGE(LOG_TAG, "Trying long read");
-            //characteristic->m_semaphoreReadCharEvt.give(BLE_HS_EAGAIN);
+			// If data length == mtu - 1 tell the read function to try a long read.
+			// Make sure this only happens once.
+			if(characteristic->m_semaphoreReadCharEvt.value() != BLE_HS_EAGAIN) {
+                characteristic->m_semaphoreReadCharEvt.give(BLE_HS_EAGAIN);
+			}
             return 0;
         }
     }
